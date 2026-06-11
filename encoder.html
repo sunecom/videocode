@@ -48,11 +48,13 @@
                     const y = landmarks[i].y * 480;
                     ctx.beginPath(); ctx.arc(x, y, 2, 0, 2 * Math.PI); ctx.fill();
                 }
-                // 发送数据
+                // 发送真实鼻尖坐标 (Index 1 is the tip of the nose in FaceMesh)
                 if (ws && ws.readyState === WebSocket.OPEN) {
+                    const nose = landmarks[1]; 
                     const packet = {
                         v: "1.1", t: Date.now(),
-                        f: [0, 10, 20], d: [0.5, 0.5, 0, 0.6, 0.5, 0, 0.5, 0.6, 0], // 简化示例数据
+                        f: [1], // 只发鼻尖这个点的索引
+                        d: [nose.x, nose.y, nose.z], // 发送真实的归一化坐标
                         tex: { c: document.getElementById('charSelect').value, b: document.getElementById('bgSelect').value }
                     };
                     ws.send(JSON.stringify(packet));

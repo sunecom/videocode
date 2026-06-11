@@ -16,6 +16,7 @@
         <button id="connectBtn">连接服务器</button>
         <button id="disconnectBtn" style="background: #f44336; display: none;">断开连接</button>
         <span id="status">状态: 未连接</span>
+        <div id="debug-info" style="margin-top: 10px; font-size: 12px; color: #aaa;">等待数据...</div>
     </div>
     <div id="loading">正在加载 3D 模型...</div>
     <canvas id="canvas"></canvas>
@@ -57,9 +58,21 @@
             currentModel.position.y = -1;
             scene.add(currentModel);
             
-            // 查找头部骨骼 (RobotExpressive 使用的是 Mixamo 骨骼)
-            headBone = currentModel.getObjectByName('mixamorig:Head');
-            if (headBone) console.log("Head bone found:", headBone.name);
+            // 调试：打印所有骨骼名称
+            const bones = [];
+            currentModel.traverse((o) => { if (o.isBone) bones.push(o.name); });
+            console.log("Available Bones:", bones);
+
+            // 尝试多种常见的头部骨骼名称
+            headBone = currentModel.getObjectByName('mixamorig:Head') || 
+                       currentModel.getObjectByName('Head') || 
+                       currentModel.getObjectByName('Neck');
+            
+            if (headBone) {
+                console.log("✅ Head bone found:", headBone.name);
+            } else {
+                console.warn("❌ Head bone not found! Using fallback model rotation.");
+            }
             
             document.getElementById('loading').style.display = 'none';
             console.log("Model loaded successfully");
@@ -95,7 +108,10 @@
                         dataStr = event.data;
                     }
                     const data = JSON.parse(dataStr);
-                    if (data.d && Array.isArray(data.d) && data.d.length > 6) {
+                    if (data.d && Array.isArray(data.d) && data.d.length > 0) {
+                        // 实时显示收到的数据
+                        document.getElementById('debug-info').textContent = `收到数据: X=${data.d[0]}, Y=${data.d[1]}`;
+
                         // 姿态解算：利用关键点坐标模拟 Yaw (左右) 和 Pitch (上下)
                         const yaw = (parseFloat(data.d[0]) - 0.5) * 1.5; 
                         const pitch = (parseFloat(data.d[1]) - 0.5) * 1.0;
