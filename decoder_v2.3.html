@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>VideoCode v2.3 - Stable Head</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #1a1a1a; color: #fff; font-family: Arial; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #ui { position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 8px; }
+        button { padding: 8px 16px; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 5px; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <button id="connectBtn">连接服务器</button>
+        <button id="disconnectBtn" style="background: #f44336; display: none;">断开连接</button>
+        <span id="status">状态: 未连接</span>
+        <div id="debug-info" style="margin-top: 10px; font-size: 12px; color: #aaa;">等待数据...</div>
+    </div>
+    <canvas id="canvas"></canvas>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script>
+        // 1. 场景初始化
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x2C3E50);
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.z = 3.5;
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        
+        scene.add(new THREE.DirectionalLight(0xffffff, 1));
+        scene.add(new THREE.AmbientLight(0x404040));
+
+        // 2. 程序化生成头部 (Procedural Head)
+        const headGroup = new THREE.Group();
+        
+        // 脸 (球体)
+        const face = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 32), new THREE.MeshStandardMaterial({ color: 0xffccaa }));
+        headGroup.add(face);
+
+        // 眼睛 (左)
+        const eyeGeo = new THREE.SphereGeometry(0.15, 16, 16);
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const pupilMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+        
+        const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+        leftEye.position.set(-0.35, 0.2, 0.85);
+        const leftPupil = new THREE.Mesh(new THREE.SphereGeometry(0.07), pupilMat);
+        leftPupil.position.z = 0.12;
+        leftEye.add(leftPupil);
+        headGroup.add(leftEye);
+
+        // 眼睛 (右)
+        const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+        rightEye.position.set(0.35, 0.2, 0.85);
+        const rightPupil = new THREE.Mesh(new THREE.SphereGeometry(0.07), pupilMat);
+        rightPupil.position.z = 0.12;
+        rightEye.add(rightPupil);
+        headGroup.add(rightEye);
+
+        // 鼻子 (圆锥)
+        const nose = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.3, 16), new THREE.MeshStandardMaterial({ color: 0xeebb99 }));
+        nose.rotation.x = -Math.PI / 2;
+        nose.position.set(0, -0.1, 1.0);
+        headGroup.add(nose);
+
+        // 嘴巴 (可变形盒子)
+        const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.1, 0.1), new THREE.MeshStandardMaterial({ color: 0xcc8888 }));
+        mouth.position.set(0, -0.5, 0.9);
+        headGroup.add(mouth);
+
+        scene.add(headGroup);
+
+        // 3. WebSocket 逻辑
+        let ws;
+        const statusSpan = document.getElementById('status');
+        const debugInfo = document.getElementById('debug-info');
+        
+        document.getElementById('disconnectBtn').addEventListener('click', () => { if (ws) ws.close(); });
+        document.getElementById('connectBtn').addEventListener('click', () => {
+            statusSpan.textContent = "正在连接...";
+            ws = new WebSocket('wss://vc.aitomoney.online/ws?role=decoder');
+            
+            ws.onopen = () => {
+                statusSpan.textContent = "✅ 已连接";
+                document.getElementById('connectBtn').style.display = 'none';
+                document.getElementById('disconnectBtn').style.display = 'inline-block';
+            };
+
+            ws.onclose = () => {
+                statusSpan.textContent = "❌ 已断开";
+                document.getElementById('connectBtn').style.display = 'inline-block';
+                document.getElementById('disconnectBtn').style.display = 'none';
+            };
+
+            ws.onmessage = async (event) => {
+                try {
+                    let dataStr = event.data instanceof Blob ? await event.data.text() : event.data;
+                    const data = JSON.parse(dataStr);
+                    
+                    if (data.d && Array.isArray(data.d) && data.d.length > 2) {
+                        const x = parseFloat(data.d[0]);
+                        const y = parseFloat(data.d[1]);
+                        const mouthOpen = parseFloat(data.d[2])

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>VideoCode v2.3 - BrainStem Head</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #1a1a1a; color: #fff; font-family: Arial; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #ui { position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 8px; }
+        button { padding: 8px 16px; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 5px; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <button id="connectBtn">连接服务器</button>
+        <button id="disconnectBtn" style="background: #f44336; display: none;">断开连接</button>
+        <span id="status">状态: 未连接</span>
+        <div id="debug-info" style="margin-top: 10px; font-size: 12px; color: #aaa;">等待数据...</div>
+    </div>
+    <canvas id="canvas"></canvas>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+
+    <script>
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x2C3E50);
+        const canvas = document.getElementById('canvas');
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 0.3, 2.5);
+        const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+
+        // Lights
+        const light = new THREE.DirectionalLight(0xffffff, 1);
+        light.position.set(5, 5, 5);
+        scene.add(light);
+        scene.add(new THREE.AmbientLight(0x606060));
+
+        // Model state
+        let headModel = null;
+        let headBone = null;
+        let jawBone = null;
+
+        // Load local BrainStem model
+        const loader = new THREE.GLTFLoader();
+        loader.load('/models/BrainStem.glb', (gltf) => {
+            headModel = gltf.scene;
+            headModel.scale.set(0.8, 0.8, 0.8);
+            headModel.position.y = -0.8;
+            scene.add(headModel);
+
+            // Find head and jaw bones
+            headModel.traverse((o) => {
+                if (o.isBone) {
+                    if (o.name.includes('Head') || o.name.includes('head')) headBone = o;
+                    if (o.name.includes('Jaw') || o.name.includes('jaw')) jawBone = o;
+                }
+            });
+
+            document.getElementById('debug-info').textContent = `BrainStem loaded. Head: ${!!headBone}, Jaw: ${!!jawBone}`;
+        }, undefined, (err) => {
+            document.getElementById('debug-info').textContent = 'Model load failed: ' + err;
+        });
+
+        let ws;
+        const statusSpan = document.getElementById('status');
+        const debugInfo = document.getElementById('debug-info');
+
+        document.getElementById('disconnectBtn').addEventListener('click', () => { if (ws) ws.close(); });
+        document.getElementById('connectBtn').addEventListener('click', () => {
+            statusSpan.textContent = "正在连接...";
+            ws = new WebSocket('wss://vc.aitomoney.online/ws?role=decoder');
+
+            ws.onopen = () => {
+                statusSpan.textContent = "Connected";
+                document.getElementById('connectBtn').style.display = 'none';
+                document.getElementById('disconnectBtn').style.display = 'inline-block';
+            };
+
+            ws.onclose = () => {
+                statusSpan.textContent = "Disconnected";
+                document.getElementById('connectBtn').style.display = 'inline-block';
+                document.getElementById('disconnectBtn').style.display = 'none';
+            };
+
+            ws.onmessage = async (event) => {
+                try {
+                    let dataStr = event.data instanceof Blob ? await event.data.text() : event.data;
+                    const data = JSON.parse(dataStr);
+
+                    if (data.d && Array.isArray(data.d) && data.d.length > 2) {
+                        const x = parseFloat(data.d[0]);
+                        const y = parseFloat(data.d[1]);
+                        const mouthOpen = parseFloat(data.d[2]) || 0;
+
+                        if (headBone) {
+                            // Head rotation
+                            headBone.rotation.x = (y - 0.5) * 0.5;
+                            headBone.rotation.y = (x - 0.5) * 0.8;
+                        }
+
+                        if (jawBone) {
+                            // Jaw opening
+                            jawBone.rotation.x = mouthOpen * 5;
+                        }
+                    }
+                } catch (e) { console.error(e); }
+            };
+        });
+
+        // Render loop
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

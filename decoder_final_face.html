@@ -42,6 +42,12 @@
         const nose = new THREE.Mesh(new THREE.SphereGeometry(0.12, 32, 32), new THREE.MeshStandardMaterial({ color: 0xeebb99 }));
         nose.position.set(0, -0.05, 1.05);
         headGroup.add(nose);
+        // 眉毛 (棕色长条)
+        const browGeo = new THREE.BoxGeometry(0.3, 0.06, 0.05);
+        const browMat = new THREE.MeshStandardMaterial({ color: 0x885533 });
+        const leftBrow = new THREE.Mesh(browGeo, browMat); leftBrow.position.set(-0.35, 0.55, 0.9); headGroup.add(leftBrow);
+        const rightBrow = new THREE.Mesh(browGeo, browMat); rightBrow.position.set(0.35, 0.55, 0.9); headGroup.add(rightBrow);
+
         const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.1), new THREE.MeshStandardMaterial({ color: 0xcc8888 }));
         mouth.position.set(0, -0.45, 0.95);
         headGroup.add(mouth);
@@ -75,9 +81,15 @@
                         // 嘴巴开合
                         mouth.scale.y = 1 + mouthOpen * 15;
 
-                        // 眼睛跟随
-                        leftEye.children[1].position.x = (x - 0.5) * 0.1;
-                        rightEye.children[1].position.x = (x - 0.5) * 0.1;
+                        // 眼睛跟随 & 眨眼 (根据嘴巴开合度模拟)
+                        const blinkScale = 1 - mouthOpen * 2; 
+                        leftEye.scale.y = blinkScale > 0 ? blinkScale : 0.1;
+                        rightEye.scale.y = blinkScale > 0 ? blinkScale : 0.1;
+                        
+                        // 眉毛上扬 (惊讶表情)
+                        const browLift = mouthOpen * 0.2;
+                        leftBrow.position.y = 0.55 + browLift;
+                        rightBrow.position.y = 0.55 + browLift;
                     }
                 } catch (err) { console.error(err); }
             };
