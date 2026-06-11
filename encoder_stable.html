@@ -5,8 +5,7 @@
     <title>VideoCode v2.1 - Encoder (Stable)</title>
     <style>
         body { font-family: Arial; margin: 20px; background: #1a1a1a; color: #fff; }
-        .container { display: flex; gap: 20px; }
-        video, canvas { border: 2px solid #333; width: 640px; height: 480px; background: #000; }
+        video, canvas { border: 2px solid #333; width: 640px; height: 480px; background: #000; display: block; margin-top: 10px; }
         .stats { margin-top: 20px; padding: 15px; background: #2a2a2a; border-radius: 8px; }
         button { padding: 10px 20px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; }
         select { padding: 5px; margin-left: 10px; background: #333; color: #fff; }
@@ -23,10 +22,8 @@
         <select id="charSelect"><option value="char_male_01">商务男士</option><option value="char_female_01">职业女士</option></select>
         <select id="bgSelect"><option value="bg_office">办公室</option><option value="bg_studio">摄影棚</option></select>
     </div>
-    <div class="container">
-        <div><h3>原始视频</h3><video id="video" autoplay playsinline></video></div>
-        <div><h3>语义提取</h3><canvas id="canvas" width="640" height="480"></canvas></div>
-    </div>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" width="640" height="480"></canvas>
     <div class="stats" id="status">状态: 等待启动...</div>
 
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>

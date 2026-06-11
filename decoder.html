@@ -46,9 +46,13 @@
         <div class="metric"><span>压缩率:</span><span class="value" id="compressionRatio">0%</span></div>
     </div>
 
+    <!-- Three.js -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+
     <script>
         const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
+        // Note: Do NOT call getContext('2d') here, Three.js will create WebGL context
         const connectBtn = document.getElementById('connectBtn');
         const disconnectBtn = document.getElementById('disconnectBtn');
         const statusDiv = document.getElementById('status');
@@ -63,6 +67,23 @@
         for (let i = 0; i < 468; i++) {
             currentLandmarks.push({ x: 0.5, y: 0.5, z: 0 });
         }
+
+        // Three.js 场景初始化
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, canvas.width / canvas.height, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ canvas: canvas });
+        renderer.setSize(canvas.width, canvas.height);
+        camera.position.z = 2;
+
+        // 灯光设置
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(5, 5, 5);
+        scene.add(dirLight);
+
+        let currentModel = null;
+        const loader = new THREE.GLTFLoader();
 
         // L2 纹理状态
         let currentTexture = { char: 'char_male_01', bg: 'bg_office' };
@@ -84,11 +105,41 @@
             console.log(`[Decoder] ${msg}`);
         }
 
+        // L2 纹理模型加载
+        function loadModel(charId) {
+            const charInfo = textureMap.characters[charId];
+            if (!charInfo || !charInfo.assets) return;
+
+            // 移除旧模型
+            if (currentModel) {
+                scene.remove(currentModel);
+            }
+
+            console.log(`[Decoder] Loading model: ${charId} from ${charInfo.assets.model}`);
+            // 加载新 GLB 模型
+            loader.load(charInfo.assets.model, (gltf) => {
+                currentModel = gltf.scene;
+                currentModel.scale.set(0.5, 0.5, 0.5); // 调整大小
+                currentModel.position.y = -1;
+                scene.add(currentModel);
+                console.log(`[Decoder] Loaded model: ${charId}`);
+            }, undefined, (error) => {
+                console.error('[Decoder] Model load error:', error);
+                // 回退到简化版 3D 几何体（确保场景不黑屏）
+                const geometry = new THREE.BoxGeometry(1, 1, 1);
+                const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+                currentModel = new THREE.Mesh(geometry, material);
+                scene.add(currentModel);
+            });
+        }
+
+        // 初始加载默认模型
+        loadModel('char_male_01');
+
         function drawLandmarks(landmarks) {
-            // L2 纹理背景渲染
+            // L2 纹理背景渲染 (Three.js Scene Background)
             const bgStyle = textureMap.backgrounds[currentTexture.bg] || textureMap.backgrounds['bg_office'];
-            ctx.fillStyle = bgStyle.bg;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            scene.background = new THREE.Color(bgStyle.bg);
             
             // L2 纹理角色颜色
             const charStyle = textureMap.characters[currentTexture.char] || textureMap.characters['char_male_01'];
@@ -175,10 +226,17 @@
                     const indices = packet.i || packet.indices;
                     const coords = packet.d || packet.data;
 
-                    // L2 纹理指令解析
+                    // L2 纹理指令解析与切换
                     if (packet.tex) {
-                        if (packet.tex.c) currentTexture.char = packet.tex.c;
-                        if (packet.tex.b) currentTexture.bg = packet.tex.b;
+                        if (packet.tex.c && packet.tex.c !== currentTexture.char) {
+                            currentTexture.char = packet.tex.c;
+                            loadModel(currentTexture.char); // 触发 3D 模型切换
+                        }
+                        if (packet.tex.b) {
+                            currentTexture.bg = packet.tex.b;
+                            const bgStyle = textureMap.backgrounds[currentTexture.bg];
+                            if (bgStyle) scene.background = new THREE.Color(bgStyle.bg);
+                        }
                     }
                     
                     // 差分解码：只更新变化的点

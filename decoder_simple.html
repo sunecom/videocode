@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>VideoCode v2.1 - Decoder (Simple)</title>
+    <style>
+        body { font-family: Arial; margin: 20px; background: #1a1a1a; color: #fff; }
+        canvas { border: 2px solid #4CAF50; width: 640px; height: 480px; background: #000; }
+        .stats { margin-top: 20px; padding: 15px; background: #2a2a2a; border-radius: 8px; }
+        button { padding: 10px 20px; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>📺 VideoCode v2.1 - Decoder (Simple)</h1>
+    <button id="connectBtn">连接服务器</button>
+    <canvas id="canvas" width="640" height="480"></canvas>
+    <div class="stats" id="status">状态: 未连接</div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const statusDiv = document.getElementById('status');
+        let ws;
+
+        document.getElementById('connectBtn').addEventListener('click', () => {
+            statusDiv.textContent = "正在连接 wss://vc.aitomoney.online/ws...";
+            ws = new WebSocket('wss://vc.aitomoney.online/ws?role=decoder');
+            
+            ws.onopen = () => {
+                statusDiv.textContent = "✅ 已连接到服务器";
+                console.log("WebSocket Connected");
+            };
+            
+            ws.onmessage = (event) => {
+                statusDiv.textContent = `📥 收到数据: ${event.data.length} bytes`;
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, 640, 480);
+                ctx.fillStyle = '#00FF00';
+                ctx.font = '20px Arial';
+                ctx.fillText("Data Received!", 250, 240);
+            };
+
+            ws.onerror = (err) => {
+                statusDiv.textContent = "❌ 连接失败，请检查控制台";
+                console.error("WS Error:", err);
+            };
+        });
+    </script>
+</body>
+</html>

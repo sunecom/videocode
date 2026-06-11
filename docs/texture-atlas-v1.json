@@ -6,18 +6,20 @@
       "id": "char_male_01",
       "name": "商务男士 (Business Male)",
       "type": "human",
+      "rig_type": "mediapipe_468+33",
       "assets": {
-        "model": "https://cdn.videocode.ai/models/male_01.glb",
-        "texture": "https://cdn.videocode.ai/textures/male_01.png"
+        "model": "https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb",
+        "thumbnail": "https://cdn.videocode.ai/thumbs/male_01.jpg"
       }
     },
     {
       "id": "char_female_01",
       "name": "职业女士 (Professional Female)",
       "type": "human",
+      "rig_type": "mediapipe_468+33",
       "assets": {
-        "model": "https://cdn.videocode.ai/models/female_01.glb",
-        "texture": "https://cdn.videocode.ai/textures/female_01.png"
+        "model": "https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb",
+        "thumbnail": "https://cdn.videocode.ai/thumbs/female_01.jpg"
       }
     }
   ],
@@ -26,13 +28,19 @@
       "id": "bg_office",
       "name": "现代办公室 (Modern Office)",
       "type": "environment",
-      "asset": "https://cdn.videocode.ai/envs/office.jpg"
+      "asset": "https://cdn.videocode.ai/envs/office_01.jpg"
     },
     {
       "id": "bg_studio",
       "name": "纯色摄影棚 (Studio)",
       "type": "environment",
       "asset": "https://cdn.videocode.ai/envs/studio_grey.jpg"
+    },
+    {
+      "id": "bg_cyber",
+      "name": "赛博朋克 (Cyberpunk)",
+      "type": "environment",
+      "asset": "https://cdn.videocode.ai/envs/cyber_city.jpg"
     }
   ]
 }
