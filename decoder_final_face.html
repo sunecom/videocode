@@ -14,6 +14,29 @@
     </div>
     <canvas id="canvas"></canvas>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <!-- VideoCode Standard Parser Logic (Inline for stability) -->
+    <script>
+        class VideoCodeParser {
+            constructor(model) { this.model = model; }
+            applySchema(schema) {
+                if (!this.model) return;
+                // 1. 驱动姿态 (Pose)
+                if (schema.pose && schema.pose.head) {
+                    this.model.rotation.x = schema.pose.head.rotation.x;
+                    this.model.rotation.y = schema.pose.head.rotation.y;
+                    this.model.rotation.z = schema.pose.head.rotation.z;
+                }
+                // 2. 驱动表情 (Expression) - 针对卡通头的简化映射
+                if (schema.expression) {
+                    const mouth = this.model.getObjectByName('mouth');
+                    if (mouth && schema.expression.mouth_open !== undefined) {
+                        mouth.scale.y = 1 + schema.expression.mouth_open * 15;
+                    }
+                    // 可以在这里扩展更多表情映射
+                }
+            }
+        }
+    </script>
     <script>
         const scene=new THREE.Scene();scene.background=new THREE.Color(0x2C3E50);
         const camera=new THREE.PerspectiveCamera(50,window.innerWidth/window.innerHeight,0.1,100);camera.position.set(0,0,3.5);
@@ -49,10 +72,14 @@
         const rightBrow = new THREE.Mesh(browGeo, browMat); rightBrow.position.set(0.35, 0.55, 0.9); headGroup.add(rightBrow);
 
         const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.1), new THREE.MeshStandardMaterial({ color: 0xcc8888 }));
+        mouth.name = 'mouth'; // 给嘴巴起个名字，方便解析器查找
         mouth.position.set(0, -0.45, 0.95);
         headGroup.add(mouth);
         scene.add(headGroup);
-        document.getElementById('debug-info').textContent = "Expressive Face Ready";
+        
+        // 初始化解析器
+        const parser = new VideoCodeParser(headGroup);
+        document.getElementById('debug-info').textContent = "Schema v1.0 Parser Ready";
 
         let ws;
         document.getElementById('disconnectBtn').addEventListener('click', () => { if (ws) ws.close(); });
@@ -66,27 +93,17 @@
             ws.onmessage = async (e) => {
                 try {
                     let d = e.data instanceof Blob ? await e.data.text() : e.data;
-                    const data = JSON.parse(d);
-                    if (data.d && Array.isArray(data.d) && data.d.length > 2) {
-                        const x = parseFloat(data.d[0]);
-                        const y = parseFloat(data.d[1]);
-                        const mouthOpen = parseFloat(data.d[2]) || 0;
-                        
-                        // 头部转动 + 平移
-                        headGroup.rotation.y = (x - 0.5) * 1.5;
-                        headGroup.rotation.x = (y - 0.5) * 1.0;
-                        headGroup.position.x = (x - 0.5) * 0.5;
-                        headGroup.position.y = (y - 0.5) * 0.3;
+                    const schema = JSON.parse(d);
+                    
+                    // 使用标准解析器驱动模型
+                    parser.applySchema(schema);
 
-                        // 嘴巴开合
-                        mouth.scale.y = 1 + mouthOpen * 15;
-
-                        // 眼睛跟随 & 眨眼 (根据嘴巴开合度模拟)
-                        const blinkScale = 1 - mouthOpen * 2; 
+                    // 额外处理：眼睛和眉毛的联动 (Parser 暂未包含此逻辑)
+                    if (schema.expression) {
+                        const mouthOpen = schema.expression.mouth_open || 0;
+                        const blinkScale = 1 - mouthOpen * 2;
                         leftEye.scale.y = blinkScale > 0 ? blinkScale : 0.1;
                         rightEye.scale.y = blinkScale > 0 ? blinkScale : 0.1;
-                        
-                        // 眉毛上扬 (惊讶表情)
                         const browLift = mouthOpen * 0.2;
                         leftBrow.position.y = 0.55 + browLift;
                         rightBrow.position.y = 0.55 + browLift;
