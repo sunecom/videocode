@@ -26,6 +26,18 @@
         <button id="stopBtn" disabled>停止传输</button>
     </div>
 
+    <div style="margin-top: 15px; padding: 10px; background: #2a2a2a; border-radius: 8px;">
+        <label>L2 纹理指令:</label>
+        <select id="charSelect" style="margin-left: 10px; padding: 5px;">
+            <option value="char_male_01">商务男士</option>
+            <option value="char_female_01">职业女士</option>
+        </select>
+        <select id="bgSelect" style="margin-left: 10px; padding: 5px;">
+            <option value="bg_office">现代办公室</option>
+            <option value="bg_studio">纯色摄影棚</option>
+        </select>
+    </div>
+
     <div class="container">
         <div>
             <h3>原始视频</h3>
@@ -156,8 +168,12 @@
                     poseLandmarks = results.poseLandmarks;
                 }
 
-                const packet = {
-                            v: "1.0",
+                // L2 纹理指令 (从 UI 获取)
+                        const currentChar = document.getElementById('charSelect').value;
+                        const currentBg = document.getElementById('bgSelect').value;
+
+                        const packet = {
+                            v: "1.1",
                             t: now,
                             f: changedIndices,
                             d: changedCoords,
@@ -165,7 +181,8 @@
                                 Math.round(l.x * 1000) / 1000,
                                 Math.round(l.y * 1000) / 1000,
                                 Math.round(l.z * 1000) / 1000
-                            ]) : null
+                            ]) : null,
+                            tex: { c: currentChar, b: currentBg } // Texture Instructions
                         };
                         const jsonStr = JSON.stringify(packet);
                         

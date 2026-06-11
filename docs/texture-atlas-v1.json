@@ -1,0 +1,38 @@
+{
+  "version": "1.0",
+  "description": "VideoCode L2 Texture Instruction Layer - Standard Asset IDs",
+  "characters": [
+    {
+      "id": "char_male_01",
+      "name": "商务男士 (Business Male)",
+      "type": "human",
+      "assets": {
+        "model": "https://cdn.videocode.ai/models/male_01.glb",
+        "texture": "https://cdn.videocode.ai/textures/male_01.png"
+      }
+    },
+    {
+      "id": "char_female_01",
+      "name": "职业女士 (Professional Female)",
+      "type": "human",
+      "assets": {
+        "model": "https://cdn.videocode.ai/models/female_01.glb",
+        "texture": "https://cdn.videocode.ai/textures/female_01.png"
+      }
+    }
+  ],
+  "backgrounds": [
+    {
+      "id": "bg_office",
+      "name": "现代办公室 (Modern Office)",
+      "type": "environment",
+      "asset": "https://cdn.videocode.ai/envs/office.jpg"
+    },
+    {
+      "id": "bg_studio",
+      "name": "纯色摄影棚 (Studio)",
+      "type": "environment",
+      "asset": "https://cdn.videocode.ai/envs/studio_grey.jpg"
+    }
+  ]
+}
