@@ -48,13 +48,16 @@
                     const y = landmarks[i].y * 480;
                     ctx.beginPath(); ctx.arc(x, y, 2, 0, 2 * Math.PI); ctx.fill();
                 }
-                // 发送真实鼻尖坐标 (Index 1 is the tip of the nose in FaceMesh)
+                // 发送头部姿态 + 嘴巴开合度
                 if (ws && ws.readyState === WebSocket.OPEN) {
-                    const nose = landmarks[1]; 
+                    const nose = landmarks[1];
+                    const upperLip = landmarks[13]; // 上唇中点
+                    const lowerLip = landmarks[14]; // 下唇中点
+                    const mouthOpen = Math.abs(upperLip.y - lowerLip.y); // 计算张嘴幅度
+
                     const packet = {
-                        v: "1.1", t: Date.now(),
-                        f: [1], // 只发鼻尖这个点的索引
-                        d: [nose.x, nose.y, nose.z], // 发送真实的归一化坐标
+                        v: "1.2", t: Date.now(),
+                        d: [nose.x, nose.y, mouthOpen * 5], // x, y, 嘴部开合度(放大5倍以便观察)
                         tex: { c: document.getElementById('charSelect').value, b: document.getElementById('bgSelect').value }
                     };
                     ws.send(JSON.stringify(packet));
