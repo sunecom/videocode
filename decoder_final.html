@@ -2,31 +2,31 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>VideoCode v2.1 - Decoder (With Model)</title>
+    <title>VideoCode v2.1 - Decoder (Final)</title>
     <style>
         body { margin: 0; overflow: hidden; background: #1a1a1a; color: #fff; font-family: Arial; }
         canvas { display: block; width: 100vw; height: 100vh; }
         #ui { position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 8px; }
-        button { padding: 8px 16px; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 5px; }
-        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 24px; display: none; }
+        button { padding: 8px 16px; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; }
     </style>
 </head>
 <body>
     <div id="ui">
         <button id="connectBtn">连接服务器</button>
         <button id="disconnectBtn" style="background: #f44336; display: none;">断开连接</button>
-        <span id="status">状态: 未连接</span>
+        <span id="status" style="margin-left: 10px;">状态: 未连接</span>
     </div>
-    <div id="loading">正在加载 3D 模型...</div>
     <canvas id="canvas"></canvas>
 
+    <!-- Three.js r128 -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 
     <script>
+        // 1. Three.js 初始化
         const canvas = document.getElementById('canvas');
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x2C3E50);
+        scene.background = new THREE.Color(0x2C3E50); // 默认背景
         
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.z = 3;
@@ -34,86 +34,86 @@
         const renderer = new THREE.WebGLRenderer({ canvas: canvas });
         renderer.setSize(window.innerWidth, window.innerHeight);
 
+        // 灯光
         const light = new THREE.DirectionalLight(0xffffff, 1);
         light.position.set(5, 5, 5);
         scene.add(light);
         scene.add(new THREE.AmbientLight(0x404040));
 
-        // 临时立方体
-        let currentModel;
+        // 临时立方体 (Fallback)
         const geometry = new THREE.BoxGeometry();
         const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
-        currentModel = new THREE.Mesh(geometry, material);
-        scene.add(currentModel);
+        const cube = new THREE.Mesh(geometry, material);
+        scene.add(cube);
 
-        // 加载真实模型
-        const loader = new THREE.GLTFLoader();
-        document.getElementById('loading').style.display = 'block';
-        loader.load('https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb', (gltf) => {
-            scene.remove(currentModel);
-            currentModel = gltf.scene;
-            currentModel.scale.set(0.5, 0.5, 0.5);
-            currentModel.position.y = -1;
-            scene.add(currentModel);
-            document.getElementById('loading').style.display = 'none';
-            console.log("Model loaded successfully");
-        }, undefined, (error) => {
-            console.error("Model load failed, keeping fallback cube:", error);
-            document.getElementById('loading').textContent = "模型加载失败，显示备用立方体";
-        });
-
+        // 2. WebSocket 逻辑
         let ws;
         const statusSpan = document.getElementById('status');
         
-        document.getElementById('disconnectBtn').addEventListener('click', () => { if (ws) ws.close(); });
+        document.getElementById('disconnectBtn').addEventListener('click', () => {
+            if (ws) ws.close();
+        });
+
         document.getElementById('connectBtn').addEventListener('click', () => {
             statusSpan.textContent = "正在连接...";
             ws = new WebSocket('wss://vc.aitomoney.online/ws?role=decoder');
+            
             ws.onopen = () => {
                 statusSpan.textContent = "✅ 已连接";
                 document.getElementById('connectBtn').style.display = 'none';
                 document.getElementById('disconnectBtn').style.display = 'inline-block';
+                console.log("Connected to VideoCode Server");
             };
+
             ws.onclose = () => {
-                statusSpan.textContent = "❌ 已断开";
+                statusSpan.textContent = "❌ 连接已断开";
                 document.getElementById('connectBtn').style.display = 'inline-block';
                 document.getElementById('disconnectBtn').style.display = 'none';
             };
-            ws.onmessage = async (event) => {
+
+            ws.onmessage = (event) => {
                 try {
-                    // 处理 Blob 或 String 类型的消息
-                    let dataStr;
-                    if (event.data instanceof Blob) {
-                        dataStr = await event.data.text();
-                    } else {
-                        dataStr = event.data;
-                    }
-                    const data = JSON.parse(dataStr);
+                    const data = JSON.parse(event.data);
+                    // 语义驱动：根据收到的关键点数据驱动立方体
                     if (data.d && Array.isArray(data.d) && data.d.length > 1) {
+                        // 取第一个点的 Y 坐标控制旋转
                         const driveValue = parseFloat(data.d[1]);
-                        if (!isNaN(driveValue) && currentModel) {
-                            // 使用 Lerp (线性插值) 实现平滑转动
-                            const targetX = (driveValue - 0.5) * 2; // 归一化到 -1 ~ 1
-                            const targetY = (parseFloat(data.d[0]) - 0.5) * 2;
-                            
-                            currentModel.rotation.x += (targetX - currentModel.rotation.x) * 0.1;
-                            currentModel.rotation.y += (targetY - currentModel.rotation.y) * 0.1;
+                        if (!isNaN(driveValue)) {
+                            cube.rotation.x = driveValue * Math.PI;
+                            cube.rotation.y = driveValue * Math.PI;
+                        }
+                        
+                        // L2 纹理指令：切换背景色
+                        if (data.tex && data.tex.b) {
+                            if (data.tex.b === 'bg_studio') scene.background = new THREE.Color(0x808080);
+                            else scene.background = new THREE.Color(0x2C3E50);
                         }
                     }
-                } catch (e) { console.error(e); }
+                } catch (e) {
+                    console.error("Parse error:", e);
+                }
+            };
+
+            ws.onerror = (err) => {
+                statusSpan.textContent = "❌ 连接失败";
+                console.error(err);
             };
         });
 
+        // 3. 渲染循环 (绝对稳定版)
         function animate() {
             requestAnimationFrame(animate);
-            if (currentModel && !ws) { // 没连接时自动转，连接后由数据驱动
-                currentModel.rotation.x += 0.01;
-                currentModel.rotation.y += 0.01;
+            try {
+                cube.rotation.x += 0.01;
+                cube.rotation.y += 0.01;
+                renderer.render(scene, camera);
+            } catch (e) {
+                console.error("Render loop error:", e);
             }
-            renderer.render(scene, camera);
         }
         animate();
 
+        // 窗口大小调整
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
