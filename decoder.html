@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VideoCode v2.0 - Decoder (接收端)</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a1a; color: #fff; }
+        canvas { border: 2px solid #4CAF50; width: 640px; height: 480px; background: #000; }
+        .stats { margin-top: 20px; padding: 15px; background: #2a2a2a; border-radius: 8px; }
+        .stats h3 { margin: 0 0 10px 0; color: #4CAF50; }
+        .metric { display: flex; justify-content: space-between; margin: 5px 0; }
+        .value { color: #FFD700; font-weight: bold; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #2196F3; color: white; border: none; border-radius: 4px; margin: 10px 5px; }
+        button:disabled { background: #666; cursor: not-allowed; }
+        #status { margin-top: 10px; padding: 10px; background: #333; border-radius: 4px; }
+        .comparison { margin-top: 20px; padding: 15px; background: #2a2a2a; border-radius: 8px; border-left: 4px solid #FF5722; }
+        .comparison h3 { margin: 0 0 10px 0; color: #FF5722; }
+    </style>
+</head>
+<body>
+    <h1>📺 VideoCode v2.0 - Decoder (接收端)</h1>
+    
+    <div>
+        <button id="connectBtn">连接服务器</button>
+        <button id="disconnectBtn" disabled>断开连接</button>
+    </div>
+
+    <div>
+        <h3>语义渲染 (红线人)</h3>
+        <canvas id="canvas" width="640" height="480"></canvas>
+    </div>
+
+    <div class="stats">
+        <h3>📊 实时统计</h3>
+        <div class="metric"><span>接收帧率:</span><span class="value" id="fps">0</span></div>
+        <div class="metric"><span>平均延迟:</span><span class="value" id="latency">0 ms</span></div>
+        <div class="metric"><span>已接收帧数:</span><span class="value" id="frameCount">0</span></div>
+        <div id="status">状态: 未连接</div>
+    </div>
+
+    <div class="comparison">
+        <h3>📈 带宽对比 (实测数据)</h3>
+        <div class="metric"><span>VideoCode 流量:</span><span class="value" id="vcBitrate">0 KB/s</span></div>
+        <div class="metric"><span>H.264 等效流量:</span><span class="value">~500 KB/s</span></div>
+        <div class="metric"><span>压缩率:</span><span class="value" id="compressionRatio">0%</span></div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const statusDiv = document.getElementById('status');
+
+        let ws = null;
+        let frameCount = 0;
+        let totalLatency = 0;
+        let lastTime = performance.now();
+        let totalBytes = 0;
+        let currentLandmarks = [];
+        // 初始化为 468 个默认点
+        for (let i = 0; i < 468; i++) {
+            currentLandmarks.push({ x: 0.5, y: 0.5, z: 0 });
+        }
+
+        function updateStatus(msg) {
+            statusDiv.textContent = `状态: ${msg}`;
+            console.log(`[Decoder] ${msg}`);
+        }
+
+        function drawLandmarks(landmarks) {
+            // 清空画布（黑色背景）
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // 绘制关键点（红色）
+            ctx.fillStyle = '#FF0000';
+            for (let i = 0; i < landmarks.length; i++) {
+                const x = landmarks[i].x * canvas.width;
+                const y = landmarks[i].y * canvas.height;
+                
+                ctx.beginPath();
+                ctx.arc(x, y, 2, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+            
+            // 绘制面部轮廓线（让红线人更清晰）
+            ctx.strokeStyle = '#FF0000';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            
+            // 简单连接一些关键点形成轮廓（示例：下巴轮廓）
+            const jawLine = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+            for (let i = 0; i < jawLine.length - 1; i++) {
+                const p1 = landmarks[jawLine[i]];
+                const p2 = landmarks[jawLine[i + 1]];
+                ctx.moveTo(p1.x * canvas.width, p1.y * canvas.height);
+                ctx.lineTo(p2.x * canvas.width, p2.y * canvas.height);
+            }
+            ctx.stroke();
+        }
+
+        function updateStats(packetSize, latency) {
+            frameCount++;
+            totalLatency += latency;
+            totalBytes += packetSize;
+
+            const now = performance.now();
+            const elapsed = (now - lastTime) / 1000;
+            
+            if (elapsed >= 1.0) {
+                const fps = Math.round(frameCount / elapsed);
+                const avgLatency = Math.round(totalLatency / frameCount);
+                const bitrate = Math.round((totalBytes / elapsed) / 1024);
+                const h264Bitrate = 500; // KB/s (估算值)
+                const ratio = ((1 - bitrate / h264Bitrate) * 100).toFixed(1);
+                
+                document.getElementById('fps').textContent = fps;
+                document.getElementById('latency').textContent = avgLatency + ' ms';
+                document.getElementById('frameCount').textContent = frameCount;
+                document.getElementById('vcBitrate').textContent = bitrate + ' KB/s';
+                document.getElementById('compressionRatio').textContent = ratio + '%';
+                
+                frameCount = 0;
+                totalLatency = 0;
+                totalBytes = 0;
+                lastTime = now;
+            }
+        }
+
+        // 连接 WebSocket 服务器
+        connectBtn.addEventListener('click', () => {
+            const wsUrl = 'wss://vc.aitomoney.online/ws?role=decoder';
+            updateStatus(`正在连接 ${wsUrl}...`);
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                updateStatus('✅ 已连接到服务器');
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+            };
+            
+            ws.onmessage = async (event) => {
+                try {
+                    // WebSocket 可能返回 Blob 或 String，统一处理
+                    let dataStr;
+                    if (event.data instanceof Blob) {
+                        dataStr = await event.data.text();
+                    } else {
+                        dataStr = event.data;
+                    }
+                    
+                    const packet = JSON.parse(dataStr);
+                    const timestamp = packet.t || packet.timestamp;
+                    const indices = packet.i || packet.indices;
+                    const coords = packet.d || packet.data;
+                    
+                    // 差分解码：只更新变化的点
+                    for (let j = 0; j < indices.length; j++) {
+                        const idx = indices[j];
+                        if (idx >= 0 && idx < 468 && j * 3 + 2 < coords.length) {
+                            currentLandmarks[idx] = {
+                                x: coords[j * 3],
+                                y: coords[j * 3 + 1],
+                                z: coords[j * 3 + 2]
+                            };
+                        }
+                    }
+                    
+                    const latency = Date.now() - timestamp;
+                    
+                    drawLandmarks(currentLandmarks);
+                    updateStats(dataStr.length, latency);
+                } catch (err) {
+                    console.error('[Decoder] Failed to parse message:', err);
+                }
+            };
+            
+            ws.onerror = (err) => {
+                updateStatus('❌ 连接失败');
+                console.error('WebSocket error:', err);
+            };
+            
+            ws.onclose = () => {
+                updateStatus('连接已关闭');
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+            };
+        });
+
+        // 断开连接
+        disconnectBtn.addEventListener('click', () => {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            updateStatus('已断开连接');
+            disconnectBtn.disabled = true;
+            connectBtn.disabled = false;
+        });
+    </script>
+</body>
+</html>

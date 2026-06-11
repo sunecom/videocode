@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VideoCode v2.0 - Encoder (发送端)</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a1a; color: #fff; }
+        .container { display: flex; gap: 20px; }
+        video, canvas { border: 2px solid #333; width: 640px; height: 480px; background: #000; }
+        .stats { margin-top: 20px; padding: 15px; background: #2a2a2a; border-radius: 8px; }
+        .stats h3 { margin: 0 0 10px 0; color: #4CAF50; }
+        .metric { display: flex; justify-content: space-between; margin: 5px 0; }
+        .value { color: #FFD700; font-weight: bold; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #4CAF50; color: white; border: none; border-radius: 4px; margin: 10px 5px; }
+        button:disabled { background: #666; cursor: not-allowed; }
+        #status { margin-top: 10px; padding: 10px; background: #333; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>🎥 VideoCode v2.0 - Encoder (发送端)</h1>
+    
+    <div>
+        <button id="startBtn">启动摄像头</button>
+        <button id="connectBtn" disabled>连接服务器</button>
+        <button id="stopBtn" disabled>停止传输</button>
+    </div>
+
+    <div class="container">
+        <div>
+            <h3>原始视频</h3>
+            <video id="video" autoplay playsinline></video>
+        </div>
+        <div>
+            <h3>语义提取 (468点)</h3>
+            <canvas id="canvas" width="640" height="480"></canvas>
+        </div>
+    </div>
+
+    <div class="stats">
+        <h3>📊 实时统计</h3>
+        <div class="metric"><span>帧率 (FPS):</span><span class="value" id="fps">0</span></div>
+        <div class="metric"><span>数据包大小:</span><span class="value" id="packetSize">0 KB</span></div>
+        <div class="metric"><span>传输速率:</span><span class="value" id="bitrate">0 KB/s</span></div>
+        <div class="metric"><span>已发送帧数:</span><span class="value" id="frameCount">0</span></div>
+        <div id="status">状态: 等待启动...</div>
+    </div>
+
+    <!-- MediaPipe Face Mesh & Pose -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const startBtn = document.getElementById('startBtn');
+        const connectBtn = document.getElementById('connectBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusDiv = document.getElementById('status');
+
+        let faceMesh;
+        let pose;
+        let camera;
+        let ws = null;
+        let isStreaming = false;
+        let frameCount = 0;
+        let lastTime = performance.now();
+        let totalBytes = 0;
+        let lastSendTime = 0;
+        let prevLandmarks = null; // 上一帧的关键点
+        const MOVE_THRESHOLD = 0.02; // 移动阈值（忽略微小抖动）
+
+        function updateStatus(msg) {
+            statusDiv.textContent = `状态: ${msg}`;
+            console.log(`[Encoder] ${msg}`);
+        }
+
+        function updateStats(packetSize) {
+            frameCount++;
+            totalBytes += packetSize;
+
+            const now = performance.now();
+            const elapsed = (now - lastTime) / 1000;
+            
+            if (elapsed >= 1.0) {
+                const fps = Math.round(frameCount / elapsed);
+                const bitrate = Math.round((totalBytes / elapsed) / 1024);
+                
+                document.getElementById('fps').textContent = fps;
+                document.getElementById('packetSize').textContent = (packetSize / 1024).toFixed(2) + ' KB';
+                document.getElementById('bitrate').textContent = bitrate + ' KB/s';
+                document.getElementById('frameCount').textContent = frameCount;
+                
+                frameCount = 0;
+                totalBytes = 0;
+                lastTime = now;
+            }
+        }
+
+        function onResults(results) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+            // 绘制 Pose 骨架
+            if (results.poseLandmarks) {
+                drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
+                drawLandmarks(ctx, results.poseLandmarks, {color: '#FF0000', lineWidth: 1, radius: 3});
+            }
+
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const landmarks = results.multiFaceLandmarks[0];
+                
+                // 绘制关键点
+                for (let i = 0; i < landmarks.length; i++) {
+                    const x = landmarks[i].x * canvas.width;
+                    const y = landmarks[i].y * canvas.height;
+                    ctx.fillStyle = '#00FF00';
+                    ctx.beginPath();
+                    ctx.arc(x, y, 2, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+
+                // 如果正在流式传输，发送数据（限流：最多 15 FPS）
+                if (isStreaming && ws && ws.readyState === WebSocket.OPEN) {
+                    const now = Date.now();
+                    if (!lastSendTime || (now - lastSendTime) >= 66) { // 66ms = 15 FPS
+                        lastSendTime = now;
+                        
+                        // 差分编码：只传变化超过阈值的点（全量 468 点）
+                        const changedIndices = [];
+                        const changedCoords = [];
+                        
+                        for (let i = 0; i < landmarks.length; i++) {
+                            if (!prevLandmarks || 
+                                Math.abs(landmarks[i].x - prevLandmarks[i].x) > MOVE_THRESHOLD ||
+                                Math.abs(landmarks[i].y - prevLandmarks[i].y) > MOVE_THRESHOLD ||
+                                Math.abs(landmarks[i].z - prevLandmarks[i].z) > MOVE_THRESHOLD) {
+                                changedIndices.push(i);
+                                changedCoords.push(
+                                    Math.round(landmarks[i].x * 1000) / 1000,
+                                    Math.round(landmarks[i].y * 1000) / 1000,
+                                    Math.round(landmarks[i].z * 1000) / 1000
+                                );
+                            }
+                        }
+                        
+                        // 保存当前帧作为下一帧的参考
+                        prevLandmarks = landmarks;
+                        
+                        // 提取 Pose 关键点 (33 points)
+                let poseLandmarks = null;
+                if (results.poseLandmarks) {
+                    poseLandmarks = results.poseLandmarks;
+                }
+
+                const packet = {
+                            v: "1.0",
+                            t: now,
+                            f: changedIndices,
+                            d: changedCoords,
+                            p: poseLandmarks ? poseLandmarks.map(l => [
+                                Math.round(l.x * 1000) / 1000,
+                                Math.round(l.y * 1000) / 1000,
+                                Math.round(l.z * 1000) / 1000
+                            ]) : null
+                        };
+                        const jsonStr = JSON.stringify(packet);
+                        
+                        // 非阻塞发送：如果 bufferedAmount 太大，跳过这一帧
+                        if (ws.bufferedAmount < 65536) { // 64 KB 阈值
+                            ws.send(jsonStr);
+                            updateStats(jsonStr.length);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 初始化 MediaPipe Face Mesh & Pose
+        function initModels() {
+            // 1. Face Mesh
+            faceMesh = new FaceMesh({
+                locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+                }
+            });
+            faceMesh.setOptions({
+                maxNumFaces: 1,
+                refineLandmarks: true,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+            faceMesh.onResults(onResults);
+
+            // 2. Pose
+            pose = new Pose({
+                locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+                }
+            });
+            pose.setOptions({
+                modelComplexity: 1,
+                smoothLandmarks: true,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+            pose.onResults(onResults);
+        }
+
+        // 启动摄像头
+        startBtn.addEventListener('click', async () => {
+            try {
+                updateStatus('正在启动摄像头...');
+                initModels();
+                
+                camera = new Camera(video, {
+                    onFrame: async () => {
+                        await Promise.all([
+                            faceMesh.send({ image: video }),
+                            pose.send({ image: video })
+                        ]);
+                    },
+                    width: 640,
+                    height: 480
+                });
+                await camera.start();
+                
+                updateStatus('摄像头已启动');
+                startBtn.disabled = true;
+                connectBtn.disabled = false;
+            } catch (err) {
+                updateStatus(`错误: ${err.message}`);
+                console.error(err);
+            }
+        });
+
+        // 连接 WebSocket 服务器
+        connectBtn.addEventListener('click', () => {
+            const wsUrl = 'wss://vc.aitomoney.online/ws?role=encoder';
+            updateStatus(`正在连接 ${wsUrl}...`);
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                updateStatus('✅ 已连接到服务器');
+                isStreaming = true;
+                connectBtn.disabled = true;
+                stopBtn.disabled = false;
+            };
+            
+            ws.onerror = (err) => {
+                updateStatus('❌ 连接失败，请确保 server.js 正在运行');
+                console.error('WebSocket error:', err);
+            };
+            
+            ws.onclose = () => {
+                updateStatus('连接已关闭');
+                isStreaming = false;
+                connectBtn.disabled = false;
+                stopBtn.disabled = true;
+            };
+        });
+
+        // 停止传输
+        stopBtn.addEventListener('click', () => {
+            isStreaming = false;
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            updateStatus('已停止传输');
+            stopBtn.disabled = true;
+            connectBtn.disabled = false;
+        });
+    </script>
+</body>
+</html>
