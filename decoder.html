@@ -64,18 +64,36 @@
             currentLandmarks.push({ x: 0.5, y: 0.5, z: 0 });
         }
 
+        // L2 纹理状态
+        let currentTexture = { char: 'char_male_01', bg: 'bg_office' };
+        
+        // 纹理映射表 (简化版：颜色/背景色)
+        const textureMap = {
+            characters: {
+                'char_male_01': { color: '#00BFFF', name: '商务男士' },
+                'char_female_01': { color: '#FF69B4', name: '职业女士' }
+            },
+            backgrounds: {
+                'bg_office': { bg: '#2C3E50', name: '现代办公室' },
+                'bg_studio': { bg: '#808080', name: '纯色摄影棚' }
+            }
+        };
+
         function updateStatus(msg) {
             statusDiv.textContent = `状态: ${msg}`;
             console.log(`[Decoder] ${msg}`);
         }
 
         function drawLandmarks(landmarks) {
-            // 清空画布（黑色背景）
-            ctx.fillStyle = '#000000';
+            // L2 纹理背景渲染
+            const bgStyle = textureMap.backgrounds[currentTexture.bg] || textureMap.backgrounds['bg_office'];
+            ctx.fillStyle = bgStyle.bg;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            // 绘制关键点（红色）
-            ctx.fillStyle = '#FF0000';
+            // L2 纹理角色颜色
+            const charStyle = textureMap.characters[currentTexture.char] || textureMap.characters['char_male_01'];
+            ctx.fillStyle = charStyle.color;
+            ctx.strokeStyle = charStyle.color;
             for (let i = 0; i < landmarks.length; i++) {
                 const x = landmarks[i].x * canvas.width;
                 const y = landmarks[i].y * canvas.height;
@@ -156,6 +174,12 @@
                     const timestamp = packet.t || packet.timestamp;
                     const indices = packet.i || packet.indices;
                     const coords = packet.d || packet.data;
+
+                    // L2 纹理指令解析
+                    if (packet.tex) {
+                        if (packet.tex.c) currentTexture.char = packet.tex.c;
+                        if (packet.tex.b) currentTexture.bg = packet.tex.b;
+                    }
                     
                     // 差分解码：只更新变化的点
                     for (let j = 0; j < indices.length; j++) {
