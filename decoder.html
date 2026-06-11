@@ -47,6 +47,7 @@
         scene.add(currentModel);
 
         // 加载真实模型
+        let headBone = null;
         const loader = new THREE.GLTFLoader();
         document.getElementById('loading').style.display = 'block';
         loader.load('https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb', (gltf) => {
@@ -55,6 +56,11 @@
             currentModel.scale.set(0.5, 0.5, 0.5);
             currentModel.position.y = -1;
             scene.add(currentModel);
+            
+            // 查找头部骨骼 (RobotExpressive 使用的是 Mixamo 骨骼)
+            headBone = currentModel.getObjectByName('mixamorig:Head');
+            if (headBone) console.log("Head bone found:", headBone.name);
+            
             document.getElementById('loading').style.display = 'none';
             console.log("Model loaded successfully");
         }, undefined, (error) => {
@@ -89,15 +95,19 @@
                         dataStr = event.data;
                     }
                     const data = JSON.parse(dataStr);
-                    if (data.d && Array.isArray(data.d) && data.d.length > 1) {
-                        const driveValue = parseFloat(data.d[1]);
-                        if (!isNaN(driveValue) && currentModel) {
-                            // 使用 Lerp (线性插值) 实现平滑转动
-                            const targetX = (driveValue - 0.5) * 2; // 归一化到 -1 ~ 1
-                            const targetY = (parseFloat(data.d[0]) - 0.5) * 2;
-                            
-                            currentModel.rotation.x += (targetX - currentModel.rotation.x) * 0.1;
-                            currentModel.rotation.y += (targetY - currentModel.rotation.y) * 0.1;
+                    if (data.d && Array.isArray(data.d) && data.d.length > 6) {
+                        // 姿态解算：利用关键点坐标模拟 Yaw (左右) 和 Pitch (上下)
+                        const yaw = (parseFloat(data.d[0]) - 0.5) * 1.5; 
+                        const pitch = (parseFloat(data.d[1]) - 0.5) * 1.0;
+                        
+                        if (headBone) {
+                            // 驱动头部骨骼 (Lerp 平滑过渡)
+                            headBone.rotation.y += (yaw - headBone.rotation.y) * 0.2;
+                            headBone.rotation.x += (pitch - headBone.rotation.x) * 0.2;
+                        } else {
+                            // 没找到骨骼时转整个模型
+                            currentModel.rotation.y += (yaw - currentModel.rotation.y) * 0.2;
+                            currentModel.rotation.x += (pitch - currentModel.rotation.x) * 0.2;
                         }
                     }
                 } catch (e) { console.error(e); }
